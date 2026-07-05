@@ -1,0 +1,28 @@
+# Rust
+/target
+**/*.rs.bk
+*.pdb
+
+# SQLite
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+
+# UnityAssetDB index output
+.unityassetdb/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.iml
+*.swp
+*~
+
+# Cargo.lock — keep for binary (binary crate), uncomment for library crates
+# Cargo.lock

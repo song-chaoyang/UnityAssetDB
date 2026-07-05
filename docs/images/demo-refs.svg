@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 400" fill="none" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+  <rect width="900" height="400" rx="12" fill="#0D1117"/>
+
+  <!-- Title -->
+  <text x="450" y="30" text-anchor="middle" font-size="16" font-weight="700" fill="#E6EDF3">📋 Reference Query: "Who uses Enemy.mat?"</text>
+
+  <!-- Nodes -->
+  <!-- Game.unity -->
+  <g transform="translate(50, 150)">
+    <rect width="160" height="70" rx="8" fill="#1C2128" stroke="#3B82F6" stroke-width="2"/>
+    <text x="80" y="28" text-anchor="middle" font-size="13" font-weight="600" fill="#3B82F6">🎮 Game.unity</text>
+    <text x="80" y="48" text-anchor="middle" font-size="10" fill="#8B949E">Scene</text>
+    <text x="80" y="62" text-anchor="middle" font-size="9" fill="#58A6FF">3 GameObjects</text>
+  </g>
+
+  <!-- Enemy1 GameObject -->
+  <g transform="translate(290, 80)">
+    <rect width="140" height="50" rx="8" fill="#1C2128" stroke="#22D3EE"/>
+    <text x="70" y="22" text-anchor="middle" font-size="12" font-weight="500" fill="#22D3EE">Enemy1</text>
+    <text x="70" y="38" text-anchor="middle" font-size="9" fill="#8B949E">GameObject</text>
+  </g>
+
+  <!-- MeshRenderer -->
+  <g transform="translate(290, 160)">
+    <rect width="140" height="50" rx="8" fill="#1C2128" stroke="#8B5CF6"/>
+    <text x="70" y="22" text-anchor="middle" font-size="12" font-weight="500" fill="#8B5CF6">MeshRenderer</text>
+    <text x="70" y="38" text-anchor="middle" font-size="9" fill="#8B949E">Component</text>
+  </g>
+
+  <!-- Enemy.mat (target) -->
+  <g transform="translate(510, 150)">
+    <rect width="160" height="70" rx="8" fill="#1C2128" stroke="#FF2D55" stroke-width="2"/>
+    <text x="80" y="28" text-anchor="middle" font-size="13" font-weight="600" fill="#FF2D55">🎨 Enemy.mat</text>
+    <text x="80" y="48" text-anchor="middle" font-size="10" fill="#8B949E">Material</text>
+    <text x="80" y="62" text-anchor="middle" font-size="9" fill="#FF2D55">← queried asset</text>
+  </g>
+
+  <!-- Shader -->
+  <g transform="translate(730, 80)">
+    <rect width="140" height="50" rx="8" fill="#1C2128" stroke="#F7931E"/>
+    <text x="70" y="22" text-anchor="middle" font-size="12" font-weight="500" fill="#F7931E">Default.shader</text>
+    <text x="70" y="38" text-anchor="middle" font-size="9" fill="#8B949E">Shader</text>
+  </g>
+
+  <!-- Texture -->
+  <g transform="translate(730, 160)">
+    <rect width="140" height="50" rx="8" fill="#1C2128" stroke="#56D364"/>
+    <text x="70" y="22" text-anchor="middle" font-size="12" font-weight="500" fill="#56D364">enemy_diff.png</text>
+    <text x="70" y="38" text-anchor="middle" font-size="9" fill="#8B949E">Texture</text>
+  </g>
+
+  <!-- Edges -->
+  <g stroke-width="1.5" fill="none">
+    <!-- Scene → Enemy1 -->
+    <path d="M 210 170 Q 250 120 290 105" stroke="#3B82F6" marker-end="url(#a1)"/>
+    <text x="240" y="120" font-size="9" fill="#3B82F6">contains</text>
+    <!-- Scene → MeshRenderer -->
+    <path d="M 210 185 Q 250 185 290 185" stroke="#3B82F6" marker-end="url(#a1)"/>
+    <text x="235" y="178" font-size="9" fill="#3B82F6">contains</text>
+    <!-- Enemy1 → MeshRenderer (component of) -->
+    <path d="M 360 130 L 360 160" stroke="#22D3EE" stroke-dasharray="4 2" marker-end="url(#a1)"/>
+    <!-- MeshRenderer → Enemy.mat -->
+    <path d="M 430 185 Q 470 185 510 185" stroke="#FF2D55" stroke-width="2" marker-end="url(#a1)"/>
+    <text x="440" y="178" font-size="9" fill="#FF2D55">depends_on (GUID)</text>
+    <!-- Enemy.mat → Shader -->
+    <path d="M 670 165 Q 700 120 730 105" stroke="#F7931E" marker-end="url(#a1)"/>
+    <text x="685" y="125" font-size="9" fill="#F7931E">refs</text>
+    <!-- Enemy.mat → Texture -->
+    <path d="M 670 185 Q 700 185 730 185" stroke="#56D364" marker-end="url(#a1)"/>
+    <text x="685" y="178" font-size="9" fill="#56D364">refs</text>
+  </g>
+
+  <!-- CLI Output box -->
+  <g transform="translate(50, 280)">
+    <rect width="820" height="90" rx="8" fill="#1C2128" stroke="#30363D"/>
+    <text x="15" y="22" font-size="11" font-weight="600" fill="#56D364">$ unityassetdb refs Assets/Materials/Enemy.mat</text>
+    <text x="15" y="42" font-size="11" fill="#8B949E">📂 Assets/Materials/Enemy.mat (1 referenced by)</text>
+    <text x="15" y="60" font-size="11" fill="#8B949E">  ← Assets/Scenes/Game.unity [scene] via depends_on (guid-file)</text>
+    <text x="15" y="78" font-size="11" fill="#8B949E">1 reference(s) total</text>
+  </g>
+
+  <defs>
+    <marker id="a1" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+      <path d="M 0 0 L 8 4 L 0 8 z" fill="#30363D"/>
+    </marker>
+  </defs>
+</svg>

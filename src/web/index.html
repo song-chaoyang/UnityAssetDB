@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UnityAssetDB</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; height: 100vh; display: flex; flex-direction: column; }
+        .header { background: #16213e; padding: 12px 20px; display: flex; align-items: center; gap: 16px; border-bottom: 1px solid #0f3460; }
+        .header h1 { font-size: 18px; color: #e94560; }
+        .header .stats { font-size: 12px; color: #888; margin-left: auto; }
+        .search-bar { padding: 8px 16px; background: #16213e; border-bottom: 1px solid #0f3460; display: flex; gap: 8px; }
+        .search-bar input { flex: 1; padding: 8px 12px; background: #1a1a2e; border: 1px solid #0f3460; border-radius: 4px; color: #e0e0e0; font-size: 14px; }
+        .search-bar input:focus { outline: none; border-color: #e94560; }
+        .search-bar button { padding: 8px 16px; background: #e94560; border: none; border-radius: 4px; color: white; cursor: pointer; font-size: 14px; }
+        .search-bar button:hover { background: #c73650; }
+        .main { flex: 1; display: flex; overflow: hidden; }
+        .sidebar { width: 320px; background: #16213e; border-right: 1px solid #0f3460; overflow-y: auto; padding: 8px; }
+        .sidebar .entry { padding: 6px 8px; cursor: pointer; border-radius: 4px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .sidebar .entry:hover { background: #0f3460; }
+        .sidebar .entry.active { background: #e94560; }
+        .sidebar .entry .icon { margin-right: 6px; }
+        .graph-container { flex: 1; position: relative; overflow: hidden; }
+        #graph { width: 100%; height: 100%; }
+        .info-panel { position: absolute; top: 12px; right: 12px; width: 300px; max-height: 400px; background: rgba(22,33,62,0.95); border: 1px solid #0f3460; border-radius: 8px; padding: 16px; overflow-y: auto; display: none; }
+        .info-panel.visible { display: block; }
+        .info-panel h3 { font-size: 14px; color: #e94560; margin-bottom: 8px; word-break: break-all; }
+        .info-panel .ref-list { font-size: 12px; }
+        .info-panel .ref-list .ref { padding: 4px 0; border-bottom: 1px solid #0f3460; }
+        .info-panel .ref-list .ref .path { color: #4ecca3; cursor: pointer; }
+        .info-panel .ref-list .ref .path:hover { text-decoration: underline; }
+        .info-panel .ref-list .ref .edge { color: #888; font-size: 11px; }
+        .loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #888; }
+        .direction-toggle { display: flex; gap: 4px; }
+        .direction-toggle button { padding: 4px 12px; background: #1a1a2e; border: 1px solid #0f3460; border-radius: 4px; color: #888; cursor: pointer; font-size: 12px; }
+        .direction-toggle button.active { background: #e94560; color: white; border-color: #e94560; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>UnityAssetDB</h1>
+        <div class="direction-toggle">
+            <button id="dir-in" class="active" onclick="setDirection('in')">Incoming</button>
+            <button id="dir-out" onclick="setDirection('out')">Outgoing</button>
+        </div>
+        <div class="stats" id="stats">Loading...</div>
+    </div>
+    <div class="search-bar">
+        <input type="text" id="search" placeholder="Search assets by name or path..." onkeypress="handleSearch(event)">
+        <button onclick="doSearch()">Search</button>
+    </div>
+    <div class="main">
+        <div class="sidebar" id="sidebar">
+            <div class="loading">Loading...</div>
+        </div>
+        <div class="graph-container">
+            <div id="graph"></div>
+            <div class="info-panel" id="info-panel">
+                <h3 id="info-title"></h3>
+                <div class="ref-list" id="info-refs"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+    <script>
+        let currentDirection = 'in';
+        let network = null;
+
+        async function api(path) {
+            const res = await fetch('/api/' + path);
+            return res.json();
+        }
+
+        async function loadStatus() {
+            const s = await api('status');
+            document.getElementById('stats').textContent =
+                `Files: ${s.file_count} | Assets: ${s.asset_count} | Entities: ${s.entity_count} | Refs: ${s.vfs_edge_count}`;
+        }
+
+        async function loadRoot() {
+            const entries = await api('ls?path=Assets&depth=2');
+            renderSidebar(entries, 'Assets');
+        }
+
+        function renderSidebar(entries, basePath) {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.innerHTML = '';
+            entries.forEach(e => {
+                const div = document.createElement('div');
+                div.className = 'entry';
+                const icon = e.entry_type === 'directory' ? '📁' : e.entry_type === 'file' ? '📄' : '🔷';
+                div.innerHTML = `<span class="icon">${icon}</span>${e.display_name}`;
+                div.onclick = () => {
+                    if (e.has_children) loadPath(e.vfs_path);
+                    showGraph(e.vfs_path);
+                };
+                sidebar.appendChild(div);
+            });
+        }
+
+        async function loadPath(path) {
+            const entries = await api(`ls?path=${encodeURIComponent(path)}&depth=1`);
+            renderSidebar(entries, path);
+        }
+
+        async function showGraph(path) {
+            const data = await api(`graph?path=${encodeURIComponent(path)}`);
+            const nodes = new vis.DataSet(data.nodes.map(n => ({
+                id: n.id,
+                label: n.label,
+                group: n.group,
+                color: getColor(n.group),
+                font: { color: '#e0e0e0', size: 12 },
+                shape: 'box',
+                margin: 8,
+            })));
+
+            const edges = new vis.DataSet(data.edges.map(e => ({
+                from: e.from,
+                to: e.to,
+                label: e.label,
+                arrows: 'to',
+                color: { color: '#0f3460', highlight: '#e94560' },
+                font: { size: 10, color: '#666' },
+            })));
+
+            const container = document.getElementById('graph');
+            if (network) network.destroy();
+
+            network = new vis.Network(container, { nodes, edges }, {
+                layout: { improvedLayout: true },
+                physics: { stabilization: true, barnesHut: { gravitationalConstant: -3000 } },
+                interaction: { hover: true, tooltipDelay: 200 },
+                groups: {
+                    scene: { color: { background: '#4ecca3', border: '#3aa882' } },
+                    prefab: { color: { background: '#e94560', border: '#c73650' } },
+                    material: { color: { background: '#a8e6cf', border: '#88c6af' } },
+                    script: { color: { background: '#ffd93d', border: '#ddb820' } },
+                    texture: { color: { background: '#6c5ce7', border: '#5a4bd1' } },
+                    component: { color: { background: '#fd79a8', border: '#d56790' } },
+                    gameobject: { color: { background: '#74b9ff', border: '#5a9fdf' } },
+                }
+            });
+
+            network.on('click', (params) => {
+                if (params.nodes.length > 0) {
+                    showInfo(params.nodes[0]);
+                } else {
+                    document.getElementById('info-panel').classList.remove('visible');
+                }
+            });
+
+            loadRefs(path);
+        }
+
+        async function showInfo(path) {
+            const dir = currentDirection;
+            const refs = await api(`refs?path=${encodeURIComponent(path)}&direction=${dir}`);
+            const panel = document.getElementById('info-panel');
+            const title = document.getElementById('info-title');
+            const list = document.getElementById('info-refs');
+
+            title.textContent = path;
+            list.innerHTML = refs.map(r => {
+                const other = dir === 'in' ? r.from_path : r.to_path;
+                const otherKind = dir === 'in' ? r.from_kind : r.to_kind;
+                return `<div class="ref">
+                    <div class="path" onclick="showGraph('${other}')">${other}</div>
+                    <div class="edge">[${otherKind}] via ${r.edge_kind}${r.edge_subkind ? ' (' + r.edge_subkind + ')' : ''}</div>
+                </div>`;
+            }).join('');
+            panel.classList.add('visible');
+        }
+
+        async function loadRefs(path) {
+            showInfo(path);
+        }
+
+        function getColor(group) {
+            const colors = {
+                scene: '#4ecca3',
+                prefab: '#e94560',
+                material: '#a8e6cf',
+                script: '#ffd93d',
+                texture: '#6c5ce7',
+                component: '#fd79a8',
+                gameobject: '#74b9ff',
+            };
+            return colors[group] || '#888';
+        }
+
+        function setDirection(dir) {
+            currentDirection = dir;
+            document.getElementById('dir-in').classList.toggle('active', dir === 'in');
+            document.getElementById('dir-out').classList.toggle('active', dir === 'out');
+            const active = document.querySelector('.entry.active');
+            if (active) showGraph(active.dataset.path);
+        }
+
+        async function doSearch() {
+            const pattern = document.getElementById('search').value.trim();
+            if (!pattern) return;
+            const results = await api(`glob?pattern=${encodeURIComponent('*' + pattern + '*')}`);
+            renderSidebar(results.map(r => ({
+                vfs_path: r.vfs_path,
+                display_name: r.vfs_path,
+                entry_type: r.entry_type,
+                entry_kind: r.entry_kind,
+                has_children: false,
+            })), 'search');
+        }
+
+        function handleSearch(e) {
+            if (e.key === 'Enter') doSearch();
+        }
+
+        loadStatus();
+        loadRoot();
+    </script>
+</body>
+</html>

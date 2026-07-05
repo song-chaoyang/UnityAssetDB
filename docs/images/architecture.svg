@@ -1,0 +1,137 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 500" fill="none" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#161B22"/>
+      <stop offset="100%" stop-color="#0D1117"/>
+    </linearGradient>
+    <linearGradient id="rust" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#FF6B35"/>
+      <stop offset="100%" stop-color="#F7931E"/>
+    </linearGradient>
+    <linearGradient id="sqlite" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#00A4E4"/>
+      <stop offset="100%" stop-color="#0078D4"/>
+    </linearGradient>
+    <linearGradient id="ts" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#8B5CF6"/>
+      <stop offset="100%" stop-color="#6D28D9"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="900" height="500" rx="12" fill="url(#bg)"/>
+
+  <!-- Title -->
+  <text x="450" y="35" text-anchor="middle" font-size="18" font-weight="700" fill="#E6EDF3">UnityAssetDB — Architecture Overview</text>
+
+  <!-- Stage 1: Discovery -->
+  <g transform="translate(40, 70)">
+    <rect width="140" height="60" rx="8" fill="#1C2128" stroke="#30363D"/>
+    <text x="70" y="25" text-anchor="middle" font-size="13" font-weight="600" fill="#FF6B35">Discovery</text>
+    <text x="70" y="45" text-anchor="middle" font-size="10" fill="#8B949E">walkdir · .meta</text>
+  </g>
+
+  <!-- Stage 2: Extract -->
+  <g transform="translate(40, 150)">
+    <rect width="140" height="60" rx="8" fill="#1C2128" stroke="#30363D"/>
+    <text x="70" y="25" text-anchor="middle" font-size="13" font-weight="600" fill="url(#ts)">Extract</text>
+    <text x="70" y="45" text-anchor="middle" font-size="10" fill="#8B949E">serde_yaml · tree-sitter</text>
+  </g>
+
+  <!-- Stage 3: Resolve -->
+  <g transform="translate(40, 230)">
+    <rect width="140" height="60" rx="8" fill="#1C2128" stroke="#30363D"/>
+    <text x="70" y="25" text-anchor="middle" font-size="13" font-weight="600" fill="#3B82F6">Resolve</text>
+    <text x="70" y="45" text-anchor="middle" font-size="10" fill="#8B949E">Entity graph · GUID map</text>
+  </g>
+
+  <!-- Stage 4: Materialize -->
+  <g transform="translate(40, 310)">
+    <rect width="140" height="60" rx="8" fill="#1C2128" stroke="#30363D"/>
+    <text x="70" y="25" text-anchor="middle" font-size="13" font-weight="600" fill="#22D3EE">Materialize</text>
+    <text x="70" y="45" text-anchor="middle" font-size="10" fill="#8B949E">VFS projection</text>
+  </g>
+
+  <!-- Arrows between stages -->
+  <g stroke="#30363D" stroke-width="2" fill="none" marker-end="url(#arrow)">
+    <line x1="110" y1="130" x2="110" y2="150"/>
+    <line x1="110" y1="210" x2="110" y2="230"/>
+    <line x1="110" y1="290" x2="110" y2="310"/>
+  </g>
+
+  <!-- Central: SQLite -->
+  <g transform="translate(340, 150)">
+    <rect width="220" height="180" rx="12" fill="#0D1117" stroke="url(#sqlite)" stroke-width="2"/>
+    <text x="110" y="30" text-anchor="middle" font-size="16" font-weight="700" fill="url(#sqlite)">📊 SQLite Index</text>
+    <line x1="20" y1="42" x2="200" y2="42" stroke="#30363D"/>
+    <text x="20" y="62" font-size="11" fill="#8B949E">📁 files · assets · assemblies</text>
+    <text x="20" y="82" font-size="11" fill="#8B949E">📄 yaml_objects · yaml_references</text>
+    <text x="20" y="102" font-size="11" fill="#8B949E">🔬 cs_declarations · symbols</text>
+    <text x="20" y="122" font-size="11" fill="#8B949E">🔗 entities · entity_edges</text>
+    <text x="20" y="142" font-size="11" fill="#8B949E">🗂️ vfs_entries · vfs_edges</text>
+    <text x="20" y="162" font-size="10" fill="#58A6FF">19 tables · recursive CTE queries</text>
+  </g>
+
+  <!-- Arrow from pipeline to SQLite -->
+  <g stroke="#30363D" stroke-width="2" fill="none">
+    <path d="M 180 200 L 340 200" marker-end="url(#arrow)"/>
+    <path d="M 180 260 L 340 260" marker-end="url(#arrow)"/>
+    <path d="M 180 340 L 340 280" marker-end="url(#arrow)"/>
+  </g>
+
+  <!-- Output: CLI -->
+  <g transform="translate(640, 80)">
+    <rect width="200" height="70" rx="8" fill="#1C2128" stroke="#FF6B35"/>
+    <text x="100" y="28" text-anchor="middle" font-size="14" font-weight="700" fill="#FF6B35">💻 CLI</text>
+    <text x="100" y="48" text-anchor="middle" font-size="10" fill="#8B949E">refs · ls · glob · grep</text>
+    <text x="100" y="62" text-anchor="middle" font-size="10" fill="#8B949E">read · index · status</text>
+  </g>
+
+  <!-- Output: Web UI -->
+  <g transform="translate(640, 170)">
+    <rect width="200" height="70" rx="8" fill="#1C2128" stroke="#22D3EE"/>
+    <text x="100" y="28" text-anchor="middle" font-size="14" font-weight="700" fill="#22D3EE">🌐 Web UI</text>
+    <text x="100" y="48" text-anchor="middle" font-size="10" fill="#8B949E">axum · vis.js graph</text>
+    <text x="100" y="62" text-anchor="middle" font-size="10" fill="#8B949E">REST API · interactive</text>
+  </g>
+
+  <!-- Output: MCP -->
+  <g transform="translate(640, 260)">
+    <rect width="200" height="70" rx="8" fill="#1C2128" stroke="#8B5CF6"/>
+    <text x="100" y="28" text-anchor="middle" font-size="14" font-weight="700" fill="#8B5CF6">🔌 MCP Server</text>
+    <text x="100" y="48" text-anchor="middle" font-size="10" fill="#8B949E">JSON-RPC · stdio</text>
+    <text x="100" y="62" text-anchor="middle" font-size="10" fill="#8B949E">7 tools exposed</text>
+  </g>
+
+  <!-- Arrows from SQLite to outputs -->
+  <g stroke="#30363D" stroke-width="2" fill="none">
+    <path d="M 560 200 L 640 115" marker-end="url(#arrow)"/>
+    <path d="M 560 240 L 640 205" marker-end="url(#arrow)"/>
+    <path d="M 560 280 L 640 295" marker-end="url(#arrow)"/>
+  </g>
+
+  <!-- Bottom stats -->
+  <g transform="translate(40, 410)">
+    <rect width="820" height="60" rx="8" fill="#1C2128" stroke="#30363D"/>
+    <text x="80" y="25" text-anchor="middle" font-size="20" font-weight="800" fill="#FF6B35">10k+</text>
+    <text x="80" y="45" text-anchor="middle" font-size="10" fill="#8B949E">files/sec indexed</text>
+
+    <text x="240" y="25" text-anchor="middle" font-size="20" font-weight="800" fill="#22D3EE">&lt;1ms</text>
+    <text x="240" y="45" text-anchor="middle" font-size="10" fill="#8B949E">query latency</text>
+
+    <text x="400" y="25" text-anchor="middle" font-size="20" font-weight="800" fill="#8B5CF6">19</text>
+    <text x="400" y="45" text-anchor="middle" font-size="10" fill="#8B949E">SQLite tables</text>
+
+    <text x="560" y="25" text-anchor="middle" font-size="20" font-weight="800" fill="#3B82F6">3MB</text>
+    <text x="560" y="45" text-anchor="middle" font-size="10" fill="#8B949E">binary size</text>
+
+    <text x="720" y="25" text-anchor="middle" font-size="20" font-weight="800" fill="#FF2D55">0</text>
+    <text x="720" y="45" text-anchor="middle" font-size="10" fill="#8B949E">runtime deps</text>
+  </g>
+
+  <!-- Arrow marker -->
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+      <path d="M 0 0 L 8 4 L 0 8 z" fill="#30363D"/>
+    </marker>
+  </defs>
+</svg>
