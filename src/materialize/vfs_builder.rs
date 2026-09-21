@@ -32,10 +32,18 @@ impl<'a> VfsBuilder<'a> {
     }
 
     pub fn build(&mut self) -> rusqlite::Result<()> {
+        self.build_with_progress(&mut |_: &str| {})
+    }
+
+    /// `on_unit` fires once per unit of work (file entry, node entry, or
+    /// set-based edge step), labelled with the item being processed.
+    /// Without it the whole materialize phase is a progress-bar black box.
+    pub fn build_with_progress(&mut self, on_unit: &mut dyn FnMut(&str)) -> rusqlite::Result<()> {
         self.build_directory_tree()?;
-        self.build_file_entries()?;
-        self.build_node_entries()?;
-        self.build_vfs_edges()?;
+        on_unit("directory tree");
+        self.build_file_entries(on_unit)?;
+        self.build_node_entries(on_unit)?;
+        self.build_vfs_edges(on_unit)?;
         Ok(())
     }
 
@@ -92,7 +100,7 @@ impl<'a> VfsBuilder<'a> {
         Ok(())
     }
 
-    fn build_file_entries(&mut self) -> rusqlite::Result<()> {
+    fn build_file_entries(&mut self, on_unit: &mut dyn FnMut(&str)) -> rusqlite::Result<()> {
         let mut stmt = self.conn.prepare(
             "SELECT id, project_rel_path, kind, abs_path, size_bytes
              FROM files
@@ -116,6 +124,7 @@ impl<'a> VfsBuilder<'a> {
 
         for (file_id, rel_path, kind, abs_path, size_bytes) in files {
             let normalized = rel_path.replace('\\', "/");
+            on_unit(&normalized);
             let parent = normalized.rsplit_once('/').map(|(p, _)| p.to_string());
 
             // Index the body of small text files so `grep` and `read`
@@ -146,7 +155,7 @@ impl<'a> VfsBuilder<'a> {
         Ok(())
     }
 
-    fn build_node_entries(&mut self) -> rusqlite::Result<()> {
+    fn build_node_entries(&mut self, on_unit: &mut dyn FnMut(&str)) -> rusqlite::Result<()> {
         // Create node entries for entities (GameObjects, Components, Materials, etc.)
         let mut stmt = self.conn.prepare(
             "SELECT e.id, e.asset_id, e.entity_kind, e.local_key, e.name, e.type_name,
@@ -196,6 +205,7 @@ impl<'a> VfsBuilder<'a> {
         {
             // VFS path: <vfs_root_path>:/<entity_kind>/<local_key>
             let vfs_path = format!("{}:/{}", vfs_root_path, local_key);
+            on_unit(&vfs_path);
             let display_name = name.clone().unwrap_or_else(|| type_name.clone());
 
             self.conn.execute(
@@ -217,7 +227,7 @@ impl<'a> VfsBuilder<'a> {
         Ok(())
     }
 
-    fn build_vfs_edges(&mut self) -> rusqlite::Result<()> {
+    fn build_vfs_edges(&mut self, on_unit: &mut dyn FnMut(&str)) -> rusqlite::Result<()> {
         // All edge inserts let SQLite auto-assign ids (NULL → max rowid + 1).
         // Manually allocating ids via `next_id + ROW_NUMBER()` while
         // `INSERT OR IGNORE` skips duplicate rows let later queries reuse
@@ -233,6 +243,7 @@ impl<'a> VfsBuilder<'a> {
              WHERE e.project_id = ?1 AND d.project_id = ?1",
             rusqlite::params![self.project_id],
         )?;
+        on_unit("vfs edges: child_of");
 
         // 2. defined_in edges: node → file
         self.conn.execute(
@@ -244,6 +255,7 @@ impl<'a> VfsBuilder<'a> {
                AND n.entry_type = 'node' AND f.entry_type = 'file'",
             rusqlite::params![self.project_id],
         )?;
+        on_unit("vfs edges: defined_in");
 
         // Resolve GUID references ONCE into an indexed temp table.
         // Joining `lower(guid) = lower(?)` inline lets the planner pick a
@@ -269,6 +281,7 @@ impl<'a> VfsBuilder<'a> {
              CREATE INDEX temp.idx_rr_from ON resolved_refs (from_file_id);
              CREATE INDEX temp.idx_rr_to ON resolved_refs (to_file_id);",
         )?;
+        on_unit("resolving guid refs");
 
         // 3. depends_on edges: file → file (from yaml_references via guid)
         self.conn.execute(
@@ -282,6 +295,7 @@ impl<'a> VfsBuilder<'a> {
                   AND to_entry.entry_type = 'file' AND to_entry.project_id = ?1",
             rusqlite::params![self.project_id],
         )?;
+        on_unit("vfs edges: depends_on");
 
         // 4. binds_to edges: component node → script class node
         self.conn.execute(
@@ -295,6 +309,7 @@ impl<'a> VfsBuilder<'a> {
              WHERE comp_entity.entity_kind = 'component'",
             rusqlite::params![],
         )?;
+        on_unit("vfs edges: binds_to");
 
         // 5. instance_of edges: prefab instance → source prefab
         self.conn.execute(
@@ -309,6 +324,7 @@ impl<'a> VfsBuilder<'a> {
              WHERE rr.from_kind IN ('scene', 'prefab')",
             rusqlite::params![self.project_id],
         )?;
+        on_unit("vfs edges: instance_of");
 
         Ok(())
     }

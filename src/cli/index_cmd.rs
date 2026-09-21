@@ -859,8 +859,31 @@ fn run_build(
 
     // ── Phase 7/8: VFS materialization ───────────────────────────
     progress.phase(6);
+
+    // Sub-progress: materialization is otherwise a black box and the
+    // overall bar sits frozen at its base weight for the whole phase.
+    // Units = 1 (dir tree) + file rows + node rows + 6 set-based edge
+    // steps, matching the builder's on_unit calls.
+    let vfs_file_units: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM files WHERE project_id = 1 AND kind != 'meta'",
+        [],
+        |row| row.get(0),
+    )?;
+    let vfs_node_units: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM entities e JOIN assets a ON e.asset_id = a.id WHERE a.project_id = 1",
+        [],
+        |row| row.get(0),
+    )?;
+    progress.set_len(1 + vfs_file_units as u64 + vfs_node_units as u64 + 6);
+
     let mut vfs_builder = VfsBuilder::new(&conn, 1);
-    vfs_builder.build()?;
+    {
+        let p = &mut progress;
+        vfs_builder.build_with_progress(&mut |label| {
+            p.set_current_file(label);
+            p.inc();
+        })?;
+    }
     progress.finish_phase();
 
     // ── Phase 8/8: Publish summary ───────────────────────────────
