@@ -715,12 +715,14 @@ fn run_build(
             row.get::<_, i64>(0)
         })?;
 
-    let assets: Vec<(i64, i64, String, String)> = {
+    let assets: Vec<(i64, i64, String, String, String)> = {
         let mut stmt = conn.prepare(
-            "SELECT id, file_id, asset_kind, vfs_root_path FROM assets WHERE project_id = 1",
+            "SELECT a.id, a.file_id, a.asset_kind, a.vfs_root_path, f.abs_path
+             FROM assets a JOIN files f ON f.id = a.file_id
+             WHERE a.project_id = 1",
         )?;
         let rows = stmt.query_map([], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
         })?;
         let mut result = Vec::new();
         for v in rows.flatten() {
@@ -731,41 +733,22 @@ fn run_build(
 
     progress.set_len(assets.len() as u64);
 
-    for (asset_id, file_id, asset_kind_str, vfs_root) in &assets {
+    for (asset_id, file_id, asset_kind_str, vfs_root, abs_path) in &assets {
         progress.set_current_file(vfs_root);
         let asset_kind = parse_asset_kind(asset_kind_str);
 
-        // Load YAML objects for this file
-        let yaml_objects: Vec<crate::extract::YamlObject> = {
-            let mut stmt = conn.prepare(
-                "SELECT doc_index, unity_class_id, anchor, object_type, local_identifier,
-                        game_object_file_id, component_type_name, script_guid, script_file_id,
-                        name, line_start, line_end
-                 FROM yaml_objects WHERE file_id = ?1",
-            )?;
-
-            let rows: Vec<_> = stmt
-                .query_map(params![file_id], |row| {
-                    Ok(crate::extract::YamlObject {
-                        doc_index: row.get::<_, i64>(0)? as usize,
-                        unity_class_id: row.get(1)?,
-                        anchor: row.get(2)?,
-                        object_type: row.get(3)?,
-                        local_identifier: row.get(4)?,
-                        game_object_file_id: row.get(5)?,
-                        component_type_name: row.get(6)?,
-                        script_guid: row.get(7)?,
-                        script_file_id: row.get(8)?,
-                        name: row.get(9)?,
-                        line_start: row.get(10)?,
-                        line_end: row.get(11)?,
-                        payload: serde_yaml::Value::Null,
-                    })
-                })?
-                .filter_map(|r| r.ok())
-                .collect();
-            rows
-        };
+        // Load YAML objects for this file by re-parsing the source content directly,
+        // rather than reconstructing YamlObject rows from the flat `yaml_objects` table
+        // (that table has no column for the nested payload, so a from-DB reconstruction
+        // can only ever produce `payload: Value::Null` — silently breaking every
+        // payload-dependent extraction downstream: Transform parent/child hierarchy AND
+        // per-entity field-value summaries both read `obj.payload`). Re-parsing costs an
+        // extra pass over this one file, which is worth it for a build-time index step.
+        let yaml_objects: Vec<crate::extract::YamlObject> = std::fs::read_to_string(abs_path)
+            .ok()
+            .and_then(|content| crate::extract::extract_from_unity_yaml(&content))
+            .map(|r| r.objects)
+            .unwrap_or_default();
 
         let mut builder = EntityGraphBuilder::new();
         builder.build_for_asset(*asset_id, &asset_kind, &yaml_objects);
@@ -788,10 +771,10 @@ fn run_build(
             conn.execute(
                 "INSERT INTO entities
                  (id, asset_id, yaml_object_id, entity_kind, local_key, name,
-                  type_name, parent_entity_id, line_start, line_end)
+                  type_name, parent_entity_id, line_start, line_end, generated_content)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7,
                    (SELECT id FROM entities WHERE asset_id = ?2 AND local_key = ?8 LIMIT 1),
-                   ?9, ?10)",
+                   ?9, ?10, ?11)",
                 params![
                     next_entity_id,
                     asset_id,
@@ -803,6 +786,7 @@ fn run_build(
                     entity.parent_local_key,
                     entity.line_start,
                     entity.line_end,
+                    entity.generated_content,
                 ],
             )?;
             next_entity_id += 1;

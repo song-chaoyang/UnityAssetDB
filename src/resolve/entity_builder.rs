@@ -12,6 +12,7 @@ pub struct BuiltEntity {
     pub parent_local_key: Option<String>,
     pub line_start: i64,
     pub line_end: i64,
+    pub generated_content: Option<String>,
 }
 
 pub struct BuiltEdge {
@@ -72,6 +73,7 @@ impl EntityGraphBuilder {
                         parent_local_key: None,
                         line_start: obj.line_start,
                         line_end: obj.line_end,
+                        generated_content: None,
                     };
                     let idx = self.entities.len();
                     self.local_key_to_entity_index
@@ -103,6 +105,7 @@ impl EntityGraphBuilder {
                     parent_local_key: None,
                     line_start: obj.line_start,
                     line_end: obj.line_end,
+                    generated_content: crate::extract::extract_field_summary(&obj.payload),
                 };
                 let idx = self.entities.len();
                 self.local_key_to_entity_index
@@ -138,6 +141,7 @@ impl EntityGraphBuilder {
                     parent_local_key: Some(parent_key.clone()),
                     line_start: obj.line_start,
                     line_end: obj.line_end,
+                    generated_content: crate::extract::extract_field_summary(&obj.payload),
                 };
                 let idx = self.entities.len();
                 self.local_key_to_entity_index
@@ -212,6 +216,7 @@ impl EntityGraphBuilder {
                     parent_local_key: None,
                     line_start: obj.line_start,
                     line_end: obj.line_end,
+                    generated_content: None,
                 };
                 let idx = self.entities.len();
                 self.local_key_to_entity_index
@@ -239,6 +244,7 @@ impl EntityGraphBuilder {
                 parent_local_key: None,
                 line_start: obj.line_start,
                 line_end: obj.line_end,
+                generated_content: None,
             };
             let idx = self.entities.len();
             self.local_key_to_entity_index

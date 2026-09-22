@@ -2,7 +2,10 @@ use rusqlite::Connection;
 
 /// File bodies above this size are not stored in the index
 /// (grep/read fall back to "no indexed content" for them).
-const MAX_INDEXED_CONTENT_BYTES: i64 = 256 * 1024;
+/// 32MB comfortably covers real-world prefab/scene sizes (largest observed
+/// in practice so far: ~24MB) while still bounding worst-case DB bloat from
+/// a pathologically huge scene file.
+const MAX_INDEXED_CONTENT_BYTES: i64 = 32 * 1024 * 1024;
 
 /// File kinds whose body text is worth indexing for grep/read.
 fn is_indexable_text_kind(kind: &str) -> bool {
@@ -156,13 +159,50 @@ impl<'a> VfsBuilder<'a> {
     }
 
     fn build_node_entries(&mut self, on_unit: &mut dyn FnMut(&str)) -> rusqlite::Result<()> {
-        // Create node entries for entities (GameObjects, Components, Materials, etc.)
+        // Create node entries for entities (GameObjects, Components, Materials, etc.).
+        //
+        // parent_vfs_path resolution:
+        // - Component (including Transform/RectTransform itself): its owning
+        //   GameObject, via entities.parent_entity_id directly (`direct_parent`).
+        // - GameObject: its owning GameObject is NOT on entities.parent_entity_id
+        //   (that column only ever points Component -> GameObject). It has to be
+        //   walked: this GameObject's own Transform/RectTransform component
+        //   (`own_transform`, found via parent_entity_id = this GameObject) ->
+        //   the 'parent_of' edge from that Transform (`pe` / `parent_transform`,
+        //   entity_edges is built per-Transform, not per-GameObject) -> that
+        //   parent Transform's owning GameObject (`go_parent`). Each hop has
+        //   1:0/1:1 cardinality (one GameObject has at most one Transform, one
+        //   Transform has at most one parent_of edge), so this is a plain LEFT
+        //   JOIN chain, not a recursive query, and never multiplies rows.
+        // - Everything else (material/scriptable_object/subasset/shader*/vfx*):
+        //   unchanged, flat under the file (no Transform-style hierarchy exists
+        //   for these kinds).
+        //
+        // Transform/RectTransform components are excluded from the result entirely
+        // (WHERE clause below) — they're pure hierarchy plumbing with no business
+        // value of their own; hiding them means `ls` shows real GameObjects/other
+        // components directly nested, matching what you'd see in the Inspector.
         let mut stmt = self.conn.prepare(
             "SELECT e.id, e.asset_id, e.entity_kind, e.local_key, e.name, e.type_name,
-                    a.vfs_root_path, e.parent_entity_id
+                    a.vfs_root_path, e.generated_content,
+                    direct_parent.local_key AS direct_parent_local_key,
+                    go_parent.local_key     AS go_parent_local_key
              FROM entities e
              JOIN assets a ON e.asset_id = a.id
-             WHERE a.project_id = ?1",
+             LEFT JOIN entities direct_parent
+                    ON direct_parent.id = e.parent_entity_id
+             LEFT JOIN entities own_transform
+                    ON own_transform.parent_entity_id = e.id
+                   AND own_transform.entity_kind = 'component'
+                   AND own_transform.type_name IN ('Transform', 'RectTransform')
+             LEFT JOIN entity_edges pe
+                    ON pe.from_entity_id = own_transform.id AND pe.edge_kind = 'parent_of'
+             LEFT JOIN entities parent_transform
+                    ON parent_transform.id = pe.to_entity_id
+             LEFT JOIN entities go_parent
+                    ON go_parent.id = parent_transform.parent_entity_id
+             WHERE a.project_id = ?1
+               AND NOT (e.entity_kind = 'component' AND e.type_name IN ('Transform', 'RectTransform'))",
         )?;
 
         let entities: Vec<(
@@ -173,18 +213,22 @@ impl<'a> VfsBuilder<'a> {
             Option<String>,
             String,
             String,
-            Option<i64>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
         )> = stmt
             .query_map(rusqlite::params![self.project_id], |row| {
                 Ok((
-                    row.get(0)?,                   // entity_id
-                    row.get(1)?,                   // asset_id
-                    row.get(2)?,                   // entity_kind
-                    row.get(3)?,                   // local_key
-                    row.get(4)?,                   // name
-                    row.get(5)?,                   // type_name
-                    row.get(6)?,                   // vfs_root_path
-                    row.get::<_, Option<i64>>(7)?, // parent_entity_id
+                    row.get(0)?,                       // entity_id
+                    row.get(1)?,                       // asset_id
+                    row.get(2)?,                       // entity_kind
+                    row.get(3)?,                       // local_key
+                    row.get(4)?,                       // name
+                    row.get(5)?,                       // type_name
+                    row.get(6)?,                       // vfs_root_path
+                    row.get::<_, Option<String>>(7)?,  // generated_content
+                    row.get::<_, Option<String>>(8)?,  // direct_parent_local_key
+                    row.get::<_, Option<String>>(9)?,  // go_parent_local_key
                 ))
             })?
             .filter_map(|r| r.ok())
@@ -200,32 +244,47 @@ impl<'a> VfsBuilder<'a> {
             name,
             type_name,
             vfs_root_path,
-            _parent_entity_id,
+            generated_content,
+            direct_parent_local_key,
+            go_parent_local_key,
         ) in &entities
         {
-            // VFS path: <vfs_root_path>:/<entity_kind>/<local_key>
             let vfs_path = format!("{}:/{}", vfs_root_path, local_key);
             on_unit(&vfs_path);
             let display_name = name.clone().unwrap_or_else(|| type_name.clone());
 
+            let parent_vfs_path = match entity_kind.as_str() {
+                "component" => direct_parent_local_key
+                    .as_ref()
+                    .map(|k| format!("{}:/{}", vfs_root_path, k))
+                    .unwrap_or_else(|| vfs_root_path.clone()),
+                "gameobject" => go_parent_local_key
+                    .as_ref()
+                    .map(|k| format!("{}:/{}", vfs_root_path, k))
+                    .unwrap_or_else(|| vfs_root_path.clone()), // root GameObject / no Transform found
+                _ => vfs_root_path.clone(),
+            };
+
             self.conn.execute(
                 "INSERT OR IGNORE INTO vfs_entries
                  (id, project_id, entry_type, entry_kind, vfs_path, parent_vfs_path,
-                  source_entity_id, display_name)
-                 VALUES (NULL, ?1, 'node', ?2, ?3, ?4, ?5, ?6)",
+                  source_entity_id, display_name, content)
+                 VALUES (NULL, ?1, 'node', ?2, ?3, ?4, ?5, ?6, ?7)",
                 rusqlite::params![
                     self.project_id,
                     entity_kind,
                     &vfs_path,
-                    vfs_root_path,
+                    &parent_vfs_path,
                     entity_id,
                     display_name,
+                    generated_content,
                 ],
             )?;
         }
 
         Ok(())
     }
+
 
     fn build_vfs_edges(&mut self, on_unit: &mut dyn FnMut(&str)) -> rusqlite::Result<()> {
         // All edge inserts let SQLite auto-assign ids (NULL → max rowid + 1).

@@ -176,6 +176,81 @@ fn get_field(value: &serde_yaml::Value, field: &str) -> Option<String> {
     }
 }
 
+/// Extracts a small, fixed whitelist of "interesting" scalar field values from a
+/// YAML object's payload, formatted as one `key=value` line per hit (not JSON —
+/// callers grep line-by-line and want the matched line to be the clean value
+/// itself, not a whole blob). Deliberately NOT a generic "dump every scalar
+/// field" extractor: an unbounded field set would make every node's content
+/// noisy and unpredictable for grep. Matched by field name, not by
+/// `object_type` — e.g. `m_text` is the same YAML key on both legacy `Text`
+/// and `TMP_Text` (a `MonoBehaviour`, distinguishable only by script GUID),
+/// so name-based matching naturally covers both without hardcoding TMP's
+/// package GUID.
+///
+/// Returns `None` when nothing in the whitelist was present, so callers can
+/// leave `content` as SQL NULL instead of storing an empty string.
+pub fn extract_field_summary(payload: &serde_yaml::Value) -> Option<String> {
+    let map = match payload {
+        serde_yaml::Value::Mapping(m) => m,
+        _ => return None,
+    };
+    let mut lines = Vec::new();
+
+    if let Some(serde_yaml::Value::String(s)) =
+        map.get(serde_yaml::Value::String("m_text".into()))
+    {
+        if !s.is_empty() {
+            lines.push(format!("m_text={}", s.replace('\n', "\\n")));
+        }
+    }
+
+    if let Some(sprite) = map.get(serde_yaml::Value::String("m_Sprite".into())) {
+        if let Some(guid) = get_field(sprite, "guid") {
+            lines.push(format!("m_Sprite=guid:{}", guid));
+        } else if let Some(fid) = get_field(sprite, "fileID") {
+            if fid != "0" {
+                lines.push(format!("m_Sprite=fileID:{}", fid));
+            }
+        }
+    }
+
+    if let Some(serde_yaml::Value::Mapping(c)) =
+        map.get(serde_yaml::Value::String("m_Color".into()))
+    {
+        let component = |k: &str| -> Option<f64> {
+            c.get(serde_yaml::Value::String(k.into()))
+                .and_then(|v| v.as_f64().or_else(|| v.as_i64().map(|i| i as f64)))
+        };
+        if let (Some(r), Some(g), Some(b), Some(a)) = (
+            component("r"),
+            component("g"),
+            component("b"),
+            component("a"),
+        ) {
+            lines.push(format!("m_Color=({:.2},{:.2},{:.2},{:.2})", r, g, b, a));
+        }
+    }
+
+    if let Some(v) = map.get(serde_yaml::Value::String("m_Enabled".into())) {
+        if let Some(n) = v.as_i64() {
+            lines.push(format!("m_Enabled={}", n));
+        }
+    }
+
+    if let Some(v) = map.get(serde_yaml::Value::String("m_IsActive".into())) {
+        if let Some(n) = v.as_i64() {
+            lines.push(format!("m_IsActive={}", n));
+        }
+    }
+
+    if lines.is_empty() {
+        None
+    } else {
+        Some(lines.join("\n"))
+    }
+}
+
+
 fn collect_references(
     value: &serde_yaml::Value,
     local_id: &str,
